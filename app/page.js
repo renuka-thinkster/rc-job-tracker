@@ -283,6 +283,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from "
 
       const [jobs, setJobs] = useState([]);
 const [loadingJobs, setLoadingJobs] = useState(true);
+const [jobsError, setJobsError] = useState("");
 
 useEffect(() => {
   fetchJobs();
@@ -290,12 +291,21 @@ useEffect(() => {
 
 async function fetchJobs() {
   try {
+    setLoadingJobs(true);
+    setJobsError("");
+
     const res = await fetch("/api/jobs");
+
+    if (!res.ok) {
+      throw new Error("Failed to fetch jobs");
+    }
+
     const data = await res.json();
 
-    setJobs(data);
+    setJobs(Array.isArray(data) ? data : []);
   } catch (error) {
     console.error("Failed to fetch jobs:", error);
+    setJobsError(error.message || "Something went wrong");
   } finally {
     setLoadingJobs(false);
   }
@@ -380,49 +390,170 @@ async function fetchJobs() {
 
       const [newJobToast, setNewJobToast] = useState(null);
 
-      const saveJob = useCallback((data) => {
-        let createdJob = null;
-        setJobs(prev => {
-          if (editJob) {
-            const updated = prev.map(j => {
-              if (j.id !== editJob.id) return j;
-              const next = { ...j, ...data };
-              if (data.status && data.status !== j.status) {
-                next.statusHistory = [...(j.statusHistory || []), { from: j.status, to: data.status, date: new Date().toISOString() }];
-                if (data.status === "Completed" && !next.completedDate) next.completedDate = today();
-              }
-              return next;
-            });
-            return updated;
-          }
-          const ticketNumber = nextTicketNumber();
-          const fresh = normaliseJob({ ...data, id: generateId(), ticketNumber });
-          if (fresh.status === "Completed" && !fresh.completedDate) fresh.completedDate = today();
-          createdJob = fresh;
-          return [...prev, fresh];
-        });
-        setShowForm(false);
-        setEditJob(null);
-        if (createdJob) setNewJobToast({ job: createdJob });
-      }, [editJob]);
+      const saveJob = useCallback(async (data) => {
 
-      const deleteJob = useCallback((id) => {
-        if (!confirm("Delete this job? This cannot be undone.")) return;
-        setJobs(prev => prev.filter(j => j.id !== id));
-      }, []);
+  try {
 
-      const updateStatus = useCallback((id, status) => {
-        setJobs(prev => prev.map(j => {
-          if (j.id !== id) return j;
-          if (j.status === status) return j;
-          const next = {
-            ...j, status,
-            statusHistory: [...(j.statusHistory || []), { from: j.status, to: status, date: new Date().toISOString() }],
-          };
-          if (status === "Completed" && !next.completedDate) next.completedDate = today();
-          return next;
-        }));
-      }, []);
+    let createdJob = null;
+
+    if (editJob) {
+
+      const existing = jobs.find(j => j.id === editJob.id);
+
+      const next = {
+        ...existing,
+        ...data,
+      };
+
+      if (data.status && data.status !== existing.status) {
+
+        next.statusHistory = [
+          ...(existing.statusHistory || []),
+          {
+            from: existing.status,
+            to: data.status,
+            date: new Date().toISOString(),
+          },
+        ];
+
+        if (data.status === "Completed" && !next.completedDate) {
+          next.completedDate = today();
+        }
+      }
+
+      const res = await fetch(`/api/jobs/${editJob.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(next),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed updating job");
+      }
+
+    } else {
+
+      const ticketNumber = nextTicketNumber();
+
+      const fresh = normaliseJob({
+        ...data,
+        id: generateId(),
+        ticketNumber,
+      });
+
+      if (fresh.status === "Completed" && !fresh.completedDate) {
+        fresh.completedDate = today();
+      }
+
+      createdJob = fresh;
+
+      const res = await fetch("/api/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(fresh),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed creating job");
+      }
+    }
+
+    await fetchJobs();
+
+    setShowForm(false);
+    setEditJob(null);
+
+    if (createdJob) {
+      setNewJobToast({ job: createdJob });
+    }
+
+  } catch (err) {
+
+    console.error(err);
+
+    alert("Failed saving job");
+  }
+
+}, [editJob, jobs]);
+
+     const deleteJob = useCallback(async (id) => {
+
+  if (!confirm("Delete this job? This cannot be undone.")) return;
+
+  try {
+
+    const res = await fetch(`/api/jobs/${id}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) {
+      throw new Error("Delete failed");
+    }
+
+    await fetchJobs();
+
+  } catch (err) {
+
+    console.error(err);
+
+    alert("Failed deleting job");
+  }
+
+}, []);
+
+     const updateStatus = useCallback(async (id, status) => {
+
+  try {
+
+    const job = jobs.find(j => j.id === id);
+
+    if (!job) return;
+
+    if (job.status === status) return;
+
+    const next = {
+      ...job,
+      status,
+      statusHistory: [
+        ...(job.statusHistory || []),
+        {
+          from: job.status,
+          to: status,
+          date: new Date().toISOString(),
+        },
+      ],
+    };
+
+    if (status === "Completed" && !next.completedDate) {
+      next.completedDate = today();
+    }
+
+    const res = await fetch(`/api/jobs/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(next),
+    });
+
+    if (!res.ok) {
+      throw new Error("Status update failed");
+    }
+
+    await fetchJobs();
+
+  } catch (err) {
+
+    console.error(err);
+
+    alert("Failed updating status");
+  }
+
+}, [jobs]);
 
       const addMember = useCallback((name, phone) => {
         const clean = name.trim();
