@@ -281,21 +281,25 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from "
       // One-time cleanup: remove discontinued demo members + their demo jobs on first load
       const cleanupV2 = typeof localStorage !== "undefined" && localStorage.getItem("rc_cleanup_v2") !== "1";
 
-      const [jobs, setJobs] = useState(() => {
-        try {
-          const saved = localStorage.getItem("rc_jobs");
-          let parsed = saved ? JSON.parse(saved).map(normaliseJob) : initialJobs.map(normaliseJob);
-          if (cleanupV2) {
-            parsed = parsed.filter(j => j.id !== "JOB-DEMO1" && j.id !== "JOB-DEMO2");
-            parsed = parsed.map(j => ({
-              ...j,
-              additionalAssignees: (j.additionalAssignees || []).filter(m => !REMOVED_MEMBERS.includes(m)),
-            }));
-          }
-          parsed = parsed.map(j => j.ticketNumber ? j : { ...j, ticketNumber: nextTicketNumber() });
-          return parsed;
-        } catch { return initialJobs.map(normaliseJob); }
-      });
+      const [jobs, setJobs] = useState([]);
+const [loadingJobs, setLoadingJobs] = useState(true);
+
+useEffect(() => {
+  fetchJobs();
+}, []);
+
+async function fetchJobs() {
+  try {
+    const res = await fetch("/api/jobs");
+    const data = await res.json();
+
+    setJobs(data);
+  } catch (error) {
+    console.error("Failed to fetch jobs:", error);
+  } finally {
+    setLoadingJobs(false);
+  }
+}
 
       const [teamMembers, setTeamMembers] = useState(() => {
         try {
