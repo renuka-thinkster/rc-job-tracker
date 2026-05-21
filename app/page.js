@@ -311,6 +311,25 @@ async function fetchJobs() {
   }
 }
 
+useEffect(() => {
+  fetchMaintenance();
+}, []);
+
+async function fetchMaintenance() {
+
+  try {
+
+    const res = await fetch("/api/maintenance");
+
+    const data = await res.json();
+
+    setMaintRequests(data);
+
+  } catch (error) {
+
+    console.error("Failed fetching maintenance:", error);
+  }
+}
       const [teamMembers, setTeamMembers] = useState(() => {
         try {
           const saved = JSON.parse(localStorage.getItem("rc_team") || "null");
@@ -334,12 +353,7 @@ async function fetchJobs() {
         catch { return {}; }
       });
 
-      const [maintRequests, setMaintRequests] = useState(() => {
-        try {
-          const saved = JSON.parse(localStorage.getItem("rc_maint_requests") || "null");
-          return Array.isArray(saved) ? saved.map(normaliseMaintRequest) : [];
-        } catch { return []; }
-      });
+      const [maintRequests, setMaintRequests] = useState([]);
       const [maintCategories, setMaintCategories] = useState(() => {
         try {
           const saved = JSON.parse(localStorage.getItem("rc_maint_categories") || "null");
@@ -371,7 +385,7 @@ async function fetchJobs() {
       useEffect(() => { try { localStorage.setItem("rc_types",  JSON.stringify(jobTypes)); } catch {} }, [jobTypes]);
       useEffect(() => { try { localStorage.setItem("rc_phones", JSON.stringify(memberPhones)); } catch {} }, [memberPhones]);
       useEffect(() => { try { localStorage.setItem("rc_member_roles", JSON.stringify(memberRoles)); } catch {} }, [memberRoles]);
-      useEffect(() => { try { localStorage.setItem("rc_maint_requests",   JSON.stringify(maintRequests)); }   catch {} }, [maintRequests]);
+      
       useEffect(() => { try { localStorage.setItem("rc_maint_categories", JSON.stringify(maintCategories)); } catch {} }, [maintCategories]);
 
       useEffect(() => {
@@ -677,32 +691,104 @@ async function fetchJobs() {
 
       const [handoffTarget, setHandoffTarget] = useState(null);
 
-      const saveMaintRequest = useCallback((data) => {
-        if (editMaintReq) {
-          setMaintRequests(prev => prev.map(r => r.id === editMaintReq.id ? normaliseMaintRequest({ ...r, ...data }) : r));
-        } else {
-          const cat = maintCategories.find(c => c.name === data.category);
-          const fresh = normaliseMaintRequest({
-            ...data, id: generateId(), ticketNumber: nextMaintTicket(),
-            assignedTo: data.assignedTo || cat?.defaultAssignee || "",
-            expectedDays: cat?.slaDays || 3,
-            requestedDate: new Date().toISOString(),
-            status: "Open",
-          });
-          setMaintRequests(prev => [...prev, fresh]);
-        }
-        setShowMaintForm(false);
-        setEditMaintReq(null);
-      }, [editMaintReq, maintCategories]);
+      const saveMaintRequest = useCallback(async (data) => {
 
-      const deleteMaintRequest = useCallback((id) => {
-        if (!confirm("Delete this maintenance request? This cannot be undone.")) return;
-        setMaintRequests(prev => prev.filter(r => r.id !== id));
-      }, []);
+  try {
 
-      const setMaintStatus = useCallback((id, status) => {
-        setMaintRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-      }, []);
+    if (editMaintReq) {
+
+      await fetch(`/api/maintenance/${editMaintReq.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...editMaintReq,
+          ...data,
+        }),
+      });
+
+    } else {
+
+      const cat = maintCategories.find(c => c.name === data.category);
+
+      const fresh = {
+        ...data,
+        ticketNumber: nextMaintTicket(),
+        assignedTo: data.assignedTo || cat?.defaultAssignee || "",
+        expectedDays: cat?.slaDays || 3,
+        requestedDate: new Date().toISOString(),
+        status: "Open",
+      };
+
+      await fetch("/api/maintenance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(fresh),
+      });
+    }
+
+    await fetchMaintenance();
+
+    setShowMaintForm(false);
+    setEditMaintReq(null);
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [editMaintReq, maintCategories]);
+
+      const deleteMaintRequest = useCallback(async (id) => {
+
+  if (!confirm("Delete this maintenance request?")) return;
+
+  try {
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "DELETE",
+    });
+
+    await fetchMaintenance();
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, []);
+
+      const setMaintStatus = useCallback(async (id, status) => {
+
+  try {
+
+    const req = maintRequests.find(r => r.id === id);
+
+    if (!req) return;
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...req,
+        status,
+      }),
+    });
+
+    await fetchMaintenance();
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [maintRequests]);
+
 
       const addMaintUpdate = useCallback((id, by, note) => {
         setMaintRequests(prev => prev.map(r => r.id === id

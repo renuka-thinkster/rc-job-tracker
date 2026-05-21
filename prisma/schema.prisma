@@ -33,3 +33,36 @@ model Job {
 
   createdAt           DateTime  @default(now())
 }
+
+model MaintenanceRequest {
+  id            String    @id @default(cuid())
+
+  ticketNumber  String?
+  equipment     String?
+  description   String?
+  category      String?
+  requestedBy   String?
+  assignedTo    String?
+  status        String?
+
+  requestedDate DateTime?
+  resolvedDate  DateTime?
+
+  expectedDays  Int?
+  amountSpent   Float?
+
+  vendorName    String?
+  invoiceNumber String?
+
+  resolutionNote String?
+
+  updates       Json?
+
+  photosBefore  String[]
+  photosAfter   String[]
+  invoicePhotos String[]
+
+  estimate      Json?
+
+  createdAt     DateTime @default(now())
+}
