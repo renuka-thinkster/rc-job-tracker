@@ -790,68 +790,184 @@ async function fetchMaintenance() {
 }, [maintRequests]);
 
 
-      const addMaintUpdate = useCallback((id, by, note) => {
-        setMaintRequests(prev => prev.map(r => r.id === id
-          ? { ...r, updates: [...(r.updates || []), { by, note, date: new Date().toISOString() }], status: r.status === "Open" ? "InProgress" : r.status }
-          : r));
-      }, []);
+ const addMaintUpdate = useCallback(async (id, by, note) => {
 
-      const resolveMaintRequest = useCallback((id, resolution) => {
-        setMaintRequests(prev => prev.map(r => r.id === id
-          ? { ...r, ...resolution, status: "Resolved", resolvedDate: resolution.resolvedDate || today() }
-          : r));
-        setResolveMaintTarget(null);
-      }, []);
+  try {
 
-      const reopenMaintRequest = useCallback((id) => {
-        if (!confirm("Re-open this resolved request?")) return;
-        setMaintRequests(prev => prev.map(r => r.id === id ? { ...r, status: "InProgress", resolvedDate: "" } : r));
-      }, []);
+    const req = maintRequests.find(r => r.id === id);
 
-      const submitMaintEstimate = useCallback((id, amount, jobDetails, submittedBy) => {
-        const amt = Math.max(0, Number(amount) || 0);
-        const details = (jobDetails || "").trim();
-        if (!details) return { ok: false, error: "Job details are required." };
-        if (amt <= 0)  return { ok: false, error: "Amount must be greater than 0." };
-        setMaintRequests(prev => prev.map(r => r.id === id ? {
-          ...r,
-          estimate: {
-            amount: amt, jobDetails: details,
-            submittedBy: submittedBy || r.assignedTo || "",
-            submittedDate: new Date().toISOString(),
-            accountsApproval: { approved: false, by: "", date: "", notes: "", rejected: false },
-            managerApproval:  { approved: false, by: "", date: "", notes: "", rejected: false },
-          },
-          updates: [...(r.updates || []), {
-            by: submittedBy || r.assignedTo || "System",
-            note: `Estimate submitted: ${formatINR(amt)} — awaiting Accounts + Manager approval`,
-            date: new Date().toISOString(),
-          }],
-        } : r));
-        return { ok: true };
-      }, []);
+    if (!req) return;
 
-      const setMaintApproval = useCallback((id, which, payload) => {
-        setMaintRequests(prev => prev.map(r => {
-          if (r.id !== id || !r.estimate) return r;
-          const next = { ...r.estimate };
-          next[which] = {
-            approved: !!payload.approved, rejected: !!payload.rejected,
-            by: payload.by || "", date: payload.date || today(),
-            notes: (payload.notes || "").trim(),
-          };
-          const label = which === "accountsApproval" ? "Accounts" : "Manager";
-          const verb  = payload.approved ? "approved" : "rejected";
-          return {
-            ...r, estimate: next,
-            updates: [...(r.updates || []), {
-              by: payload.by || "System",
-              note: `${label} ${verb} the estimate (${formatINR(r.estimate.amount)})${payload.notes ? ` — "${(payload.notes || "").trim()}"` : ""}`,
-              date: new Date().toISOString(),
-            }],
-          };
-        }));
-      }, []);
+    const updated = {
+      ...req,
+      updates: [
+        ...(req.updates || []),
+        {
+          by,
+          note,
+          date: new Date().toISOString(),
+        },
+      ],
+      status: req.status === "Open"
+        ? "InProgress"
+        : req.status,
+    };
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updated),
+    });
+
+    await fetchMaintenance();
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [maintRequests]);
+
+     const resolveMaintRequest = useCallback(async (id, resolution) => {
+
+  try {
+
+    const req = maintRequests.find(r => r.id === id);
+
+    if (!req) return;
+
+    const updated = {
+      ...req,
+      ...resolution,
+      status: "Resolved",
+      resolvedDate: resolution.resolvedDate || today(),
+    };
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updated),
+    });
+
+    await fetchMaintenance();
+
+    setResolveMaintTarget(null);
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [maintRequests]);
+
+      const reopenMaintRequest = useCallback(async (id) => {
+
+  if (!confirm("Re-open this resolved request?")) return;
+
+  try {
+
+    const req = maintRequests.find(r => r.id === id);
+
+    if (!req) return;
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...req,
+        status: "InProgress",
+        resolvedDate: "",
+      }),
+    });
+
+    await fetchMaintenance();
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [maintRequests]);
+
+      const submitMaintEstimate = useCallback(async (id, amount, jobDetails, submittedBy) => {
+
+  try {
+
+    const req = maintRequests.find(r => r.id === id);
+
+    if (!req) return;
+
+    const amt = Math.max(0, Number(amount) || 0);
+
+    const updated = {
+      ...req,
+      estimate: {
+        amount: amt,
+        jobDetails,
+        submittedBy,
+        submittedDate: new Date().toISOString(),
+      },
+    };
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updated),
+    });
+
+    await fetchMaintenance();
+
+    return { ok: true };
+
+  } catch (error) {
+
+    console.error(error);
+
+    return { ok: false };
+  }
+
+}, [maintRequests]);
+
+     const setMaintApproval = useCallback(async (id, which, payload) => {
+
+  try {
+
+    const req = maintRequests.find(r => r.id === id);
+
+    if (!req || !req.estimate) return;
+
+    const next = {
+      ...req.estimate,
+      [which]: payload,
+    };
+
+    await fetch(`/api/maintenance/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...req,
+        estimate: next,
+      }),
+    });
+
+    await fetchMaintenance();
+
+  } catch (error) {
+
+    console.error(error);
+  }
+
+}, [maintRequests]);
 
       function buildMaintMessage(req) {
         const age = maintAgeDays(req);
